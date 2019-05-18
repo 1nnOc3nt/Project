@@ -36,6 +36,77 @@ HOOK_BASE_MAX = HOOK_BASE + HOOK_BASE * (0x100)
 class analyzer(object):
     win_dict = {}
 
+    def get_api_name_by_addr(self, addr):
+		if not (HOOK_BASE <= addr <= HOOK_BASE_MAX):
+			return None
+		for _, dll_img in self.win_dict.items():
+			if dll_img['dllBase'] <= addr <= dll_img['dllLimt']:
+				return dll_img['apiDict'].get(addr)
+		return None
+	
+    indent_count = 1
+    @staticmethod
+    def print_memory(uc, addr, size, self):
+        if (self.is_x86_machine):
+		    sp = uc.reg_read(UC_X86_REG_ESP)
+        else:
+            sp = uc.reg_read(UC_X86_REG_RSP)
+        args = struct.unpack('<IIIIII', uc.mem_read(sp, 24))
+        
+        CODE = uc.mem_read(addr, size)
+        if (self.is_x86_machine):
+		    md = Cs(CS_ARCH_X86, CS_MODE_32)
+        else:
+            md = Cs(CS_ARCH_X86, CS_MODE_64)
+        for i in md.disasm(bytes(CODE), addr):
+			print("%x:%s%s\t%s" %(i.address, self.indent_count * '\t', i.mnemonic, i.op_str))
+
+			if self.indent_count < 5:
+				if i.mnemonic == 'call':
+					print('')
+					self.indent_count += 1
+				elif i.mnemonic == 'ret':
+					print('')
+					self.indent_count -= 1
+
+	#Emulator hook
+    """ @staticmethod
+    def hook_code(uc, addr, size, self):
+        if (self.is_x86_machine):
+		    sp = uc.reg_read(UC_X86_REG_ESP)
+        else:
+            sp = uc.reg_read(UC_X86_REG_RSP)
+        args = struct.unpack('<IIIIII', uc.mem_read(sp, 24))
+        retn_addr = args[0]
+        caller_addr = args[0] - 6 # size of 'call ds: xxxx' = 6 in x86
+
+        if  HOOK_BASE <= addr <= HOOK_BASE_MAX:
+            api_name = self.get_api_name_by_addr(addr)
+            if api_name == None:
+                print('[!]%x: executed bad API addr @ %x' % (caller_addr, addr))
+            else:
+                print('\n[+]%x: invoked win32 API %s' % (caller_addr, api_name))
+                print('[+]-------------------- stack trace --------------------')
+                for i in range(1, 5):
+                    strval = uc.mem_read(args[i], 30).decode('utf8', errors='ignore').strip('\x00')
+                    if (self.is_x86_machine):
+                            print('>>> args_%i(%x) --> %.8x | %s' % (i, sp + 4 * i, args[i], strval))
+                    else:
+                            print('>>> args_%i(%x) --> %.8x | %s' % (i, sp + 8 * i, args[i], strval))
+                print('---------------------------------------------------------\n')
+        else:
+			analyzer.print_memory(uc, addr, size, self) """
+
+    @staticmethod
+    def hook_code(uc, addr, size, self):
+        CODE = uc.mem_read(addr, size)
+        if (self.is_x86_machine):
+            md = Cs(CS_ARCH_X86, CS_MODE_32)
+        else:
+            md = Cs(CS_ARCH_X86, CS_MODE_64)
+        for i in md.disasm(bytes(CODE), addr):
+			print("%x:%s\t%s" %(i.address, i.mnemonic, i.op_str))
+
     def __init__(self, file_path):
         try:
             self.pe_data = open(file_path, 'rb').read()
@@ -55,8 +126,8 @@ class analyzer(object):
             print('[*]Detect x86 machine type!')
         elif (self.pe.FILE_HEADER.Machine == IMAGE_FILE_MACHINE_IA64):
             self.is_x86_machine = False
-            self.stack_base = 0x00300000
-            self.stack_size = 0x00100000
+            self.stack_base = 0x130000000
+            self.stack_size = 0x010000000
             print('[*]Detect x86_64 machine type!')
         else:
             sys.exit('[*]Unknown machine type!')
@@ -113,12 +184,12 @@ class analyzer(object):
             print('[*]Allocate stack @ %x' % (self.stack_base + self.stack_size - 8))
 
         #Hook code
-        #self.uc.hook_add(UC_HOOK_CODE, analyzer.hook_code, self)
-
+        self.uc.hook_add(UC_HOOK_CODE, self.hook_code, self)
+        
         #Execute at entry point
         try:
-			print('[*]Emulator is executing file ...')
-			self.uc.emu_start(self.addr_entry, 0)
+            print('[*]Emulator is executing file ...')
+            self.uc.emu_start(self.addr_entry, 0)
         except UcError as e:
 			sys.exit('[*]Error: %s' % e)
         self.uc.mem_unmap(self.image_base, self.size_of_image)
