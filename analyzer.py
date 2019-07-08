@@ -63,7 +63,7 @@ class analyzer(object):
 					argv = ''
 					args = struct.unpack('<IIIIII', uc.mem_read(sp, 24))
 					if ((args[i] > self.stack_base) and (args[i] < self.image_base + self.size_of_image)):
-						s = uc.mem_read(args[i], 30)
+						s = uc.mem_read(args[i], 100)
 						for c in s:
 							if (c >= 32 and c <= 126):
 								argv += chr(c)
