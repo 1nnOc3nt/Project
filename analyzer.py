@@ -52,9 +52,7 @@ class analyzer(object):
 						print('0x%x:\t%s %s' % (i.address, i.mnemonic, value))
 						check = True
 						break
-				if (check):
-					break
-				else:
+				if check == False:
 					print('0x%x:\t%s %s' % (i.address, i.mnemonic, i.op_str))
 
 				#Print arguments
